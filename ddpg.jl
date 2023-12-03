@@ -103,7 +103,7 @@ function choose_action(agent::Agent, obs)
 		rand() > agent.ϵ ? (return action) : (return noised_action)
 		return noised_action
 	else
-		return Flux.unsqueeze(obs,2) |> agent.target_actor
+		return Flux.unsqueeze(obs,2) |> agent.actor
 	end
 end
 function learn!(agent::Agent)
