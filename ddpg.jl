@@ -45,11 +45,14 @@ function Agent(actor, critic, actor_optim, critic_optim, memory::ReplayBuffer , 
 		ϵ
 	)
 end
+
+#const START_POINT = [0.2,0.3,0.5] |> x->repeat(x,outer = 6) |> x -> push!(x,0.5)
+
 function choose_action(agent::Agent, obs)
 	if agent.training_mode
 		action = Flux.unsqueeze(obs,2) |> agent.actor
 		δ = 0.01
-		Δ = 0.15
+		Δ = 0.075
 		noised_action = clamp.(action .+ Δ .* randn(length(action)), δ,1)
 		#epsilon greedy method for selecting actions
 		rand() > agent.ϵ ? (return action) : (return noised_action)

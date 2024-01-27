@@ -6,49 +6,39 @@ end
 using JSON, Plots, StatsBase, Flux, JLD2, CSV
 
 include("constants_and_utils.jl")
-include("environment.jl")
-include("ddpg.jl")
+include("dqn.jl")
+include("environment_dqn.jl")
 
 using .UtilsAndConstants
-using .Env
-using .DDPG
+using .DQN
+using .Env_DQN
 
 #State and action sizes
 begin
-	const N_STATE = N_SERVICE * N_RSU + 2
-	const N_ACTION = N_SERVICE*N_RSU + N_SERVICE + 1
+	const N_STATE = 4
+	const N_ACTION = 1
+	const N_ACTION_SPACE = 2
 end
-
-STATE_ORDER = vcat(["($(i), $(j))" for i=1:5 for j=1:3],["rem_time_2","allocs_2"]) #tells us the order of the state vector.
 
 #Evaluating the models performance based on various metrics:
 begin
-	test_agent = Agent(
-		Chain(Dense(N_STATE => 100,tanh),Dense(100 => N_ACTION, σ)),
-		Chain(Dense(N_STATE+N_ACTION => 100,tanh),Dense(100 => 1,relu)),
-		Adam(0.01),
+	model = Model(
+		Chain(Dense(N_STATE + N_ACTION => 100,tanh),Dense(100 => 1, relu)),
 		Adam(0.01),
 		ReplayBuffer(;mem_size = 1, state_size = N_STATE, action_size = N_ACTION),
-		120,
+		200,
+		10,
 		0.98,
-		0.01,
-		1
+		0.99
 	)
 	#Load the params for the networks...
 	let
-		str  = "3001"
-		actor_state = JLD2.load("actor_params/actor_$(str).jld2", "model_state")
-		critic_state = JLD2.load("critic_params/critic_$(str).jld2", "model_state")
-		#target_actor_state = JLD2.load("target_actor_params/target_actor_$(str).jld2", "model_state")
-		#target_critic_state = JLD2.load("target_critic_params/target_critic_$(str).jld2", "model_state")
-		Flux.loadmodel!(test_agent.actor, actor_state)
-		Flux.loadmodel!(test_agent.critic, critic_state)
-		#Flux.loadmodel!(test_agent.target_actor, target_actor_state)
-		#Flux.loadmodel!(test_agent.target_critic, target_critic_state)
+		str  = "2000"
+		Q_nw_state = JLD2.load("dqn_params/$(str).jld2", "model_state")
+		Flux.loadmodel!(model.Q, Q_nw_state)
 	end
-	test_agent.training_mode = false
+	model.training_mode = false
 end
-
 
 #Load the test data set
 begin
@@ -59,6 +49,7 @@ begin
 	JSON.parse(json_str)
 	end
 end
+
 
 #Let us compute the average service delay, and the number of allocations per service
 begin
@@ -76,16 +67,41 @@ begin
 		Allocs = [zeros(40) for _ in SERVICE_SET]
 		Non_allocs = [zeros(40) for _ in SERVICE_SET]
 		Violations = [zeros(40) for _ in SERVICE_SET]
-		Rsu_allocs = [[zeros(40) for _ in SERVICE_SET] for _ in 1:N_RSU]
 		Migrations = zeros(40)
 		Possible_migs = zeros(40)
 		for t in 1:40 # 40 time slots long
-			st = [noised_time_test[key][episode][t] for key in STATE_ORDER]
-			s = Flux.normalize(st) .|> Float32
-			a = choose_action(test_agent, s)
-			users = snapshot(st,action_mapper(a)) #Obtain the snapshot of the users
+			rsu_loads = map(1:5) do rsu_id
+				Tuple(noised_time_test["($(rsu_id), $(i))"][episode][t] for i in 1:N_SERVICE)
+			end
+			server_load = sum.(rsu_loads) |> sum
+			next_server_allocs = noised_time_test["allocs_2"][episode][t]
+			users = []
+			for rsu_id in 1:N_RSU
+				rsu_state = rsu_loads[rsu_id]
+				rsu_load = sum(rsu_state)
+				for service_id in 1:N_SERVICE
+					vehs = [User(SERVICE_SET[service_id], B̄ ÷ rsu_load, 0, false) for _ in 1:rsu_state[service_id]]
+					map(vehs) do veh
+						s = [rsu_load,
+						server_load,
+						next_server_allocs,
+						service_id
+						]
+						a = choose_action(model,s)
+						veh.migrate_service = a
+					end
+					push!(users, vehs...)					
+				end
+			end
+			N_migs = count(user->user.migrate_service, users)
+			#println("$(C̄), $(server_load), $(N_migs), $(length(users))")
+			CRB_per_veh = C̄ ÷ ((server_load - N_migs)*((server_load - N_migs)!=0) + (server_load - N_migs + 1)*((server_load - N_migs)==0))  
+			CRB_per_veh_mig = next_server_allocs ÷ (N_migs*(N_migs>0) + 1*(N_migs == 0))
+			map(users) do user
+				user.CRB = user.migrate_service ? CRB_per_veh_mig : CRB_per_veh
+			end
 			#Count number of migrations
-			Migrations[t] = count(user->user.mig_service, users)
+			Migrations[t] = N_migs
 			for (app_indx,app) in enumerate(SERVICE_SET)
 				service_users = filter(users) do user
 					user.service == app
@@ -96,7 +112,6 @@ begin
 				Counts[app_indx][t] += length(service_users)
 
 				delays = map(service_users) do user
-					Rsu_allocs[user.rsu_id][app_indx][t] += user.BRB
 					bv = app.data_size * 1e6
 					Cv = app.crb_needed
 					R = transmit_rate(200,user.BRB)
@@ -111,8 +126,6 @@ begin
 					del
 				end
 				delays = length(delays) > 0 ? delays : [0.0]
-				#N = count(x -> x > 0, delays)
-				#del_mean = sum(delays) / (N+1) 
 				push!(Delays[app_indx], mean(delays)) #mean(delays) is the mean service delay at time t
 			end
 		end
@@ -123,11 +136,6 @@ begin
 		mean_non_allocs = Non_allocs .|> mean
 		mean_violations = Violations .|> mean
 		mean_migrations = mean(Migrations)
-		mean_rsu_allocs = map(Rsu_allocs) do service_allocs
-								map(service_allocs) do service_alloc
-									mean(service_alloc)
-								end
-							end
 		#add this to the episodic mean quantity
 		service_dels .= service_dels .+ mean_delay
 		vehicle_counts .= vehicle_counts .+ mean_counts
@@ -135,7 +143,6 @@ begin
 		non_allocs .= non_allocs .+ mean_non_allocs
 		violations .= violations .+ mean_violations
 		global migs += mean_migrations
-		rsu_allocs .= rsu_allocs .+ mean_rsu_allocs
 	end
 	service_dels .= service_dels ./ N_episodes #Average over the N_episodes episodes
 	vehicle_counts .= vehicle_counts ./ N_episodes
@@ -143,8 +150,6 @@ begin
 	non_allocs .= non_allocs ./ N_episodes
 	violations .= violations ./ N_episodes
 	migs /= N_episodes
-	rsu_allocs .= rsu_allocs ./ N_episodes
-	possible_migs = [mean(noised_time_test["rem_time_2"][ep]) for ep in 1:N_episodes] |> mean
 
 
 	Info_dict = Dict()
@@ -154,11 +159,9 @@ begin
 	Info_dict["non_allocs"] = non_allocs
 	Info_dict["violations"] = violations
 	Info_dict["migs"] = migs
-	Info_dict["rsu_allocs"] = rsu_allocs
-	Info_dict["possible_migs"] = possible_migs
 	for (key,val) in Info_dict
 		println("$(key) ----> $(val)")
 	end
-	#save("nw_init_test.jld2", Info_dict)
-	CSV.write("nw_init.csv", Info_dict)
+	#save("veh_init_test.jld2", Info_dict)
+	CSV.write("veh_init.csv", Info_dict)
 end

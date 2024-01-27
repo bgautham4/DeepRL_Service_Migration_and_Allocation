@@ -17,14 +17,14 @@ using .Env
 #Load the data set
 begin
 	noised_time_train = let
-	json_str = open("../time_series/noised_series_7_5_20_2_train.json","r") do file
+	json_str = open("../time_series/noised_series_7_train.json","r") do file
 		read(file,String)
 	end
 	JSON.parse(json_str)
 	end
 
 	noised_time_test = let
-	json_str = open("../time_series/noised_series_7_5_20_2_test.json","r") do file
+	json_str = open("../time_series/noised_series_7_test.json","r") do file
 		read(file,String)
 	end
 	JSON.parse(json_str)
@@ -33,11 +33,11 @@ end
 
 #State and action sizes
 begin
-	const N_STATE = N_SERVICE * N_RSU + 3
-	const N_ACTION = N_SERVICE*N_RSU + N_SERVICE + 2
+	const N_STATE = N_SERVICE * N_RSU + 2
+	const N_ACTION = N_SERVICE*N_RSU + N_SERVICE + 1
 end
 
-STATE_ORDER = vcat(["($(i), $(j))" for i=1:5 for j=1:3],["rem_time","migs","allocs"]) #tells us the order of the state vector.
+STATE_ORDER = vcat(["($(i), $(j))" for i=1:5 for j=1:3],["rem_time_2","allocs_2"]) #tells us the order of the state vector.
 
 #A sample training and evaluation loop:
 begin
@@ -52,11 +52,24 @@ begin
 		0.01,
 		1
 	)
+
+	let
+		str  = "4091"
+		actor_state = JLD2.load("actor_params/actor_$(str).jld2", "model_state")
+		critic_state = JLD2.load("critic_params/critic_$(str).jld2", "model_state")
+		#target_actor_state = JLD2.load("target_actor_params/target_actor_$(str).jld2", "model_state")
+		#target_critic_state = JLD2.load("target_critic_params/target_critic_$(str).jld2", "model_state")
+		Flux.loadmodel!(test_agent.actor, actor_state)
+		Flux.loadmodel!(test_agent.critic, critic_state)
+		Flux.loadmodel!(test_agent.target_actor, actor_state)
+		Flux.loadmodel!(test_agent.target_critic, critic_state)
+	end
+	
 	G_avg_train = [] #Averaged Return for training samples
 	G_avg_test = [] #Averaged Return for testing samples
 	γ = test_agent.γ
 
-	for episode in 1:3000
+	for episode in 1:5000
 		#Evaluation occurs here
 		if (episode-1) % 10 == 0
 			println("*******episode $(episode) starting*******")
@@ -95,8 +108,8 @@ begin
 			#Save the model as the following model_$(episode).jld2
 			jldsave("actor_params/actor_$(episode).jld2", model_state = Flux.state(test_agent.actor))
 			jldsave("critic_params/critic_$(episode).jld2", model_state = Flux.state(test_agent.critic))
-			jldsave("target_actor_params/target_actor_$(episode).jld2", model_state = Flux.state(test_agent.target_actor))
-			jldsave("target_critic_params/target_critic_$(episode).jld2", model_state = Flux.state(test_agent.target_critic))
+			#jldsave("target_actor_params/target_actor_$(episode).jld2", model_state = Flux.state(test_agent.target_actor))
+			#jldsave("target_critic_params/target_critic_$(episode).jld2", model_state = Flux.state(test_agent.target_critic))
 		end
 		#Evaluation ends here. Resume training
 
@@ -128,7 +141,7 @@ begin
 	end
 
 	#Plot some stuff
-	p = plot(G_avg_train,xlabel = "Training round", ylabel = "Averaged Return",label = "train_data")
-	plot!(p,G_avg_test,label = "test_data")
+	p = plot(G_avg_train,xlabel = "Episode", ylabel = "Averaged episodic reward",label = "train data")
+	plot!(p,G_avg_test,label = "test data")
 	Plots.pdf(p,"rewards.pdf")
 end

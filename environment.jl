@@ -12,7 +12,7 @@ export Service, SERVICE_SET, N_SERVICE
 
 struct Service
 	service_indx::Int
-	data_size::Int #In Mb
+	data_size::Real #In Mb
 	crb_needed::Real #In Gcycles i.e x10⁹
 	thresh::Real
 	max_thresh::Real
@@ -21,23 +21,23 @@ end
 begin
 	const service1 = Service(
 			1,
-			7,
-			.4,
+			4,
+			.5,
 			0.35,
 			0.5
 		)
 
 		const service2 = Service(
 			2,
-			7,
-			.4,
+			6,
+			0.6,
 			0.35,
 			0.5
 		)
 		const service3 = Service(
 			3,
-			7,
-			.4,
+			8,
+			0.8,
 			0.35,
 			0.5
 		)
@@ -49,7 +49,8 @@ end
 
 module VehicleType #Defines the User type and its utility functions. 
 export User, action_mapper, snapshot, reward #Export these to calling scope
-
+include("constants_and_utils.jl")
+using .UtilsAndConstants:transmit_rate
 using ..ServiceType #Bring the Service module into scope here for use...
 using ..Env:N_RSU, B̄, C̄ #Get access to constants
 using StatsBase
@@ -63,7 +64,7 @@ mutable struct User
 end
 
 function action_mapper(x) #Map op from neural network to a workable form.
-	@assert length(x) == (N_SERVICE*N_RSU + N_SERVICE + 2)
+	@assert length(x) == (N_SERVICE*N_RSU + N_SERVICE + 1)
     action = []
     for rsu_indx in 1:N_RSU
         rsu_allocs = x[(rsu_indx-1)*N_SERVICE + 1: (rsu_indx-1)*N_SERVICE + N_SERVICE]
@@ -71,7 +72,7 @@ function action_mapper(x) #Map op from neural network to a workable form.
         rsu_allocs .= rsu_allocs ./ sum(rsu_allocs)
         push!(action,rsu_allocs)
     end
-    crb_allocs = x[N_RSU*N_SERVICE + 1 : N_RSU*N_SERVICE + N_SERVICE + 1]
+    crb_allocs = x[N_RSU*N_SERVICE + 1 : N_RSU*N_SERVICE + N_SERVICE]
     #Normalize the CRB allocations to sum to 1
     crb_allocs .= crb_allocs ./ sum(crb_allocs)
     push!(action,crb_allocs)
@@ -103,18 +104,29 @@ function snapshot(state, action)
 	#mig_descision = action[end] > 0.5 ? true : false
 	mig_users = []
 	if mig_cnt>0 && W>0
-		Y = state[end] #Number of allocations made by your neighbour
+		Y = state[end] #Allocs of next server..
 		mig_candidates = filter(users) do user
 			user.rsu_id == 5 || user.rsu_id == 4
 		end
 		n_mig_candidates = length(mig_candidates)
 		#println("$(n_mig_candidates), $(sum(state[13:15])), $(W), $(mig_cnt)")
-		mig_users = StatsBase.sample(mig_candidates, mig_cnt, replace = false)
+		#1)Random sampling for migration....
+		#mig_users = StatsBase.sample(mig_candidates, mig_cnt, replace = false)
+		#2)Sample users based on service "weight".
+		"""
+		mig_users = sort(mig_candidates,
+			by = user -> user.service.service_indx,
+			rev=true)[1:mig_cnt]
+			"""
+		#3)Sample users based on service "weight" in ascending order.
+		mig_users = sort(mig_candidates, 
+			by = user -> user.service.service_indx, 
+			rev=false)[1:mig_cnt]
 		map(mig_users) do user
 			#Due to migrations we have now freed up some CRBs
 			indx = user.service.service_indx
 			users_per_service[indx] -= 1 
-			user.CRB = Y ÷ length(mig_users)
+			user.CRB = (Y ÷ length(mig_users))
 			user.mig_service = true
 		end
 	end
@@ -142,11 +154,11 @@ function utility(user::User)
 	τₘ = service.max_thresh
 	R = transmit_rate(200,user.BRB)
 	if user.BRB == 0 || user.CRB == 0
-		u = -0.2 # utility for failing to allocate resources
+		u = 0 # utility for failing to allocate resources
 	else
 		del = bv/R + (Cv/user.CRB)
 		u = del < τ ? 1.0 : del > τₘ ? 0.0 : -(del - τₘ)/(τₘ - τ)
-		u = u + 0.2#*reward_mul[service.service_indx] + 0.2 #A small bonus for allocating resources
+		u = u 
 	end
 	return u
 end
