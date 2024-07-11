@@ -43,7 +43,7 @@ end
 #Load the test data set
 begin
 	noised_time_test = let
-	json_str = open("../time_series/noised_series_7_test.json","r") do file
+	json_str = open("path_to_time_series_file","r") do file
 		read(file,String)
 	end
 	JSON.parse(json_str)
@@ -94,7 +94,6 @@ begin
 				end
 			end
 			N_migs = count(user->user.migrate_service, users)
-			#println("$(C̄), $(server_load), $(N_migs), $(length(users))")
 			CRB_per_veh = C̄ ÷ ((server_load - N_migs)*((server_load - N_migs)!=0) + (server_load - N_migs + 1)*((server_load - N_migs)==0))  
 			CRB_per_veh_mig = next_server_allocs ÷ (N_migs*(N_migs>0) + 1*(N_migs == 0))
 			map(users) do user
@@ -144,7 +143,8 @@ begin
 		violations .= violations .+ mean_violations
 		global migs += mean_migrations
 	end
-	service_dels .= service_dels ./ N_episodes #Average over the N_episodes episodes
+    #Ensemble average over the N_episodes episodes
+	service_dels .= service_dels ./ N_episodes 
 	vehicle_counts .= vehicle_counts ./ N_episodes
 	allocs .= allocs ./ N_episodes
 	non_allocs .= non_allocs ./ N_episodes

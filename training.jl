@@ -37,7 +37,7 @@ begin
 	const N_ACTION = N_SERVICE*N_RSU + N_SERVICE + 1
 end
 
-STATE_ORDER = vcat(["($(i), $(j))" for i=1:5 for j=1:3],["rem_time_2","allocs_2"]) #tells us the order of the state vector.
+STATE_ORDER = vcat(["($(i), $(j))" for i=1:5 for j=1:3],["rem_time_2","allocs_2"]) #Load state from the read json file hashmap in this order.
 
 #A sample training and evaluation loop:
 begin
@@ -53,18 +53,6 @@ begin
 		1
 	)
 
-	let
-		str  = "4091"
-		actor_state = JLD2.load("actor_params/actor_$(str).jld2", "model_state")
-		critic_state = JLD2.load("critic_params/critic_$(str).jld2", "model_state")
-		#target_actor_state = JLD2.load("target_actor_params/target_actor_$(str).jld2", "model_state")
-		#target_critic_state = JLD2.load("target_critic_params/target_critic_$(str).jld2", "model_state")
-		Flux.loadmodel!(test_agent.actor, actor_state)
-		Flux.loadmodel!(test_agent.critic, critic_state)
-		Flux.loadmodel!(test_agent.target_actor, actor_state)
-		Flux.loadmodel!(test_agent.target_critic, critic_state)
-	end
-	
 	G_avg_train = [] #Averaged Return for training samples
 	G_avg_test = [] #Averaged Return for testing samples
 	γ = test_agent.γ
@@ -107,9 +95,11 @@ begin
 			#Let us save the model parameters here....
 			#Save the model as the following model_$(episode).jld2
 			jldsave("actor_params/actor_$(episode).jld2", model_state = Flux.state(test_agent.actor))
-			jldsave("critic_params/critic_$(episode).jld2", model_state = Flux.state(test_agent.critic))
-			#jldsave("target_actor_params/target_actor_$(episode).jld2", model_state = Flux.state(test_agent.target_actor))
-			#jldsave("target_critic_params/target_critic_$(episode).jld2", model_state = Flux.state(test_agent.target_critic))
+            jldsave("critic_params/critic_$(episode).jld2", model_state = Flux.state(test_agent.critic))
+            #Didnt save target network parameters because they are only
+            #meant for ensuring stability during training. If you want to resume
+            #traning the model from a given point, then initialize the target
+            #networks with the same parameters of the regular networks.
 		end
 		#Evaluation ends here. Resume training
 
@@ -128,16 +118,18 @@ begin
 			end
 			a = choose_action(test_agent, s) #Generate an action.
 			r = reward(st, action_mapper(a)) #Obtain reward.
-			#Store the transitions into replay buffer.
 			store_transition!(test_agent.memory, s,a,r,t,s′)
 			test_agent.step_cnt += 1
-
+            
+            #Remember to never sample the replay buffer incase you have
+            #fewer samples that the batch size:
 			#If we have fewer samples than the batch size, do not train network
 			if test_agent.step_cnt > test_agent.batch_size
 				learn!(test_agent)
 			end
 		end
-		#test_agent.ϵ -= 0.001
+        #Uncomment below line if you want epsilon greedy approach
+		#test_agent.ϵ -= 0.001 
 	end
 
 	#Plot some stuff

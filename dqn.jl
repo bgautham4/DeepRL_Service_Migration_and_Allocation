@@ -1,10 +1,19 @@
 #contains code for the algorithm
 #Here we make use of target network for added stability during training.
+#=Reference paper:
+@misc{mnih2013playingatarideepreinforcement,
+      title={Playing Atari with Deep Reinforcement Learning}, 
+      author={Volodymyr Mnih and Koray Kavukcuoglu and David Silver and Alex Graves and Ioannis Antonoglou and Daan Wierstra and Martin Riedmiller},
+      year={2013},
+      eprint={1312.5602},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/1312.5602}, 
+}
+=#
 module DQN 
 
-#Bring the buffer code here
 include("buffer.jl")
-#Make use of ReplayBuffer and its associated methods
 using .Buffer: ReplayBuffer, store_transition!, sample_buffer
 
 #Using environment, get the valid space of actions.

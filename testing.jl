@@ -19,9 +19,8 @@ begin
 	const N_ACTION = N_SERVICE*N_RSU + N_SERVICE + 1
 end
 
-STATE_ORDER = vcat(["($(i), $(j))" for i=1:5 for j=1:3],["rem_time_2","allocs_2"]) #tells us the order of the state vector.
+STATE_ORDER = vcat(["($(i), $(j))" for i=1:5 for j=1:3],["rem_time_2","allocs_2"]) #Same as training.jl
 
-#Evaluating the models performance based on various metrics:
 begin
 	test_agent = Agent(
 		Chain(Dense(N_STATE => 100,tanh),Dense(100 => N_ACTION, σ)),
@@ -39,13 +38,12 @@ begin
 		str  = "3001"
 		actor_state = JLD2.load("actor_params/actor_$(str).jld2", "model_state")
 		critic_state = JLD2.load("critic_params/critic_$(str).jld2", "model_state")
-		#target_actor_state = JLD2.load("target_actor_params/target_actor_$(str).jld2", "model_state")
-		#target_critic_state = JLD2.load("target_critic_params/target_critic_$(str).jld2", "model_state")
 		Flux.loadmodel!(test_agent.actor, actor_state)
 		Flux.loadmodel!(test_agent.critic, critic_state)
-		#Flux.loadmodel!(test_agent.target_actor, target_actor_state)
-		#Flux.loadmodel!(test_agent.target_critic, target_critic_state)
-	end
+	    #Target models not needed for evaluation, so no need to
+        #initialize them with the model parameters. You need to reinit the
+        #target models only if you wish to resume training.
+    end
 	test_agent.training_mode = false
 end
 
@@ -53,14 +51,15 @@ end
 #Load the test data set
 begin
 	noised_time_test = let
-	json_str = open("../time_series/noised_series_7_test.json","r") do file
+	json_str = open("path_to_time_series_file","r") do file
 		read(file,String)
 	end
 	JSON.parse(json_str)
 	end
 end
 
-#Let us compute the average service delay, and the number of allocations per service
+#Evaluating the models performance based on various metrics:
+#Refer to paper for all performance metrics
 begin
 	service_dels = zeros(length(SERVICE_SET)) #Mean service delay over all t and all episodes
 	vehicle_counts = zeros(length(SERVICE_SET)) #Averaged counts of vehicles running service Sᵢ.
@@ -70,7 +69,7 @@ begin
 	rsu_allocs = [zeros(length(SERVICE_SET)) for _ in 1:N_RSU]
 	migs = zero(Float64)
 	N_episodes = 50
-	for episode in 1:N_episodes #We have N_episode number test episodes
+	for episode in 1:N_episodes #We have N_episode=50 number of test episodes
 		Delays = [zeros(40) for _ in SERVICE_SET]
 		Counts = [zeros(40) for _ in SERVICE_SET]
 		Allocs = [zeros(40) for _ in SERVICE_SET]
@@ -111,8 +110,6 @@ begin
 					del
 				end
 				delays = length(delays) > 0 ? delays : [0.0]
-				#N = count(x -> x > 0, delays)
-				#del_mean = sum(delays) / (N+1) 
 				push!(Delays[app_indx], mean(delays)) #mean(delays) is the mean service delay at time t
 			end
 		end
@@ -137,7 +134,8 @@ begin
 		global migs += mean_migrations
 		rsu_allocs .= rsu_allocs .+ mean_rsu_allocs
 	end
-	service_dels .= service_dels ./ N_episodes #Average over the N_episodes episodes
+    #Ensemble average over the N_episodes episodes
+	service_dels .= service_dels ./ N_episodes 
 	vehicle_counts .= vehicle_counts ./ N_episodes
 	allocs .= allocs ./ N_episodes
 	non_allocs .= non_allocs ./ N_episodes

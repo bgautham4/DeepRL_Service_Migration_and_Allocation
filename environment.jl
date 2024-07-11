@@ -1,10 +1,14 @@
 module Env #Defines types, attributes and useful functions for environment
 
+module EnvParams
+
 const SLOT_DUR = 1.5 #In minutes
 const RSU_R = 0.5 #In Kilometers
-const N_RSU = 5
+const N_RSU = 5 #number of RSUs
 const B̄ = 50 #Max number of BRBs
 const C̄ = 100 #MAX number of CRBs
+
+end
 
 module ServiceType #Defines the Service type and the service set Κ along with its attributes
 
@@ -12,10 +16,10 @@ export Service, SERVICE_SET, N_SERVICE
 
 struct Service
 	service_indx::Int
-	data_size::Real #In Mb
-	crb_needed::Real #In Gcycles i.e x10⁹
-	thresh::Real
-	max_thresh::Real
+	data_size::Float64 #In Mb
+	crb_needed::Float64 #In Gcycles i.e x10⁹
+	thresh::Float64
+	max_thresh::Float64
 end
 
 begin
@@ -47,12 +51,13 @@ end
 
 end 
 
-module VehicleType #Defines the User type and its utility functions. 
-export User, action_mapper, snapshot, reward #Export these to calling scope
+module MobileUser #Defines the User type and its utility functions. 
+
+export User, action_mapper, snapshot, reward 
 include("constants_and_utils.jl")
 using .UtilsAndConstants:transmit_rate
-using ..ServiceType #Bring the Service module into scope here for use...
-using ..Env:N_RSU, B̄, C̄ #Get access to constants
+using ..ServiceType 
+using ..EnvParams:N_RSU, B̄, C̄ 
 using StatsBase
 
 mutable struct User
@@ -109,24 +114,26 @@ function snapshot(state, action)
 			user.rsu_id == 5 || user.rsu_id == 4
 		end
 		n_mig_candidates = length(mig_candidates)
-		#println("$(n_mig_candidates), $(sum(state[13:15])), $(W), $(mig_cnt)")
 		#1)Random sampling for migration....
-		#mig_users = StatsBase.sample(mig_candidates, mig_cnt, replace = false)
-		#2)Sample users based on service "weight".
-		"""
+		#=
+        mig_users = StatsBase.sample(mig_candidates, mig_cnt, replace = false)
+		=#
+        #2)Sample users based on service "weight" in descending order.
+		#=
 		mig_users = sort(mig_candidates,
 			by = user -> user.service.service_indx,
 			rev=true)[1:mig_cnt]
-			"""
+		=#
 		#3)Sample users based on service "weight" in ascending order.
 		mig_users = sort(mig_candidates, 
 			by = user -> user.service.service_indx, 
 			rev=false)[1:mig_cnt]
-		map(mig_users) do user
+		
+        map(mig_users) do user
 			#Due to migrations we have now freed up some CRBs
 			indx = user.service.service_indx
 			users_per_service[indx] -= 1 
-			user.CRB = (Y ÷ length(mig_users))
+			user.CRB = (Y ÷ length(mig_users)) #Integer division because cannot allocate fraction of BRB/CRB
 			user.mig_service = true
 		end
 	end
@@ -153,8 +160,8 @@ function utility(user::User)
 	τ = service.thresh
 	τₘ = service.max_thresh
 	R = transmit_rate(200,user.BRB)
-	if user.BRB == 0 || user.CRB == 0
-		u = 0 # utility for failing to allocate resources
+	if user.BRB == 0 || user.CRB == 0  # utility for failing to allocate resources
+		u = 0
 	else
 		del = bv/R + (Cv/user.CRB)
 		u = del < τ ? 1.0 : del > τₘ ? 0.0 : -(del - τₘ)/(τₘ - τ)
@@ -175,7 +182,7 @@ end
 #Export useful stuff to calling scope of Env
 export N_RSU
 
-using .VehicleType
+using .MobileUser
 export User, action_mapper, snapshot, reward 
 
 using .ServiceType

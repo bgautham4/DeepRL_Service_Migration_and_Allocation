@@ -1,8 +1,6 @@
 module DDPG #contains code algorithm definition
 
-#Bring the buffer code here
 include("buffer.jl")
-#Make use of the ReplayBuffer struct and its methods
 using .Buffer: ReplayBuffer, store_transition!, sample_buffer
 
 export Agent, learn!, choose_action, ReplayBuffer, store_transition! #Export these useful functions to calling scope 
@@ -45,8 +43,6 @@ function Agent(actor, critic, actor_optim, critic_optim, memory::ReplayBuffer , 
 		ϵ
 	)
 end
-
-#const START_POINT = [0.2,0.3,0.5] |> x->repeat(x,outer = 6) |> x -> push!(x,0.5)
 
 function choose_action(agent::Agent, obs)
 	if agent.training_mode

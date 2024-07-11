@@ -102,7 +102,6 @@ for episode in 1:2000
 					end
 				end
 				N_migs = count(user->user.migrate_service, users)
-				#println("$(C̄), $(server_load), $(N_migs), $(length(users))")
 				CRB_per_veh = C̄ ÷ ((server_load - N_migs)*((server_load - N_migs)!=0) + (server_load - N_migs + 1)*((server_load - N_migs)==0))  
 				CRB_per_veh_mig = next_server_allocs ÷ (N_migs*(N_migs>0) + 1*(N_migs==0))
 				R_t = 0
@@ -159,7 +158,6 @@ for episode in 1:2000
 					end
 				end
 				N_migs = count(user->user.migrate_service, users)
-				#println("$(C̄), $(server_load), $(N_migs), $(length(users))")
 				CRB_per_veh = C̄ ÷ ((server_load - N_migs)*((server_load - N_migs)!=0) + (server_load - N_migs + 1)*((server_load - N_migs)==0)) 
 				CRB_per_veh_mig = next_server_allocs ÷ (N_migs*(N_migs>0) + 1*(N_migs==0))
 				R_t = 0
@@ -233,7 +231,6 @@ for episode in 1:2000
 				end
 			end
 			N_migs = count(user->user.migrate_service, users)
-			#println("$(C̄), $(server_load), $(N_migs), $(length(users))")
 			CRB_per_veh = C̄ ÷ ((server_load - N_migs)*((server_load - N_migs)!=0) + (server_load - N_migs + 1)*((server_load - N_migs)==0))  
 			CRB_per_veh_mig = next_server_allocs ÷ (N_migs*(N_migs>0) + 1*(N_migs==0))
 			R_t = 0
@@ -253,7 +250,7 @@ for episode in 1:2000
 	model.ϵ -= 1/2000
 	push!(G_episodes,G_ep)
 end
-
+    #Plot stuff
 	p = plot(G_train_episodes,xlabel = "Training round", ylabel = "Averaged Return",label = "train_data")
 	plot!(p,G_test_episodes,label = "test_data")
 	q = plot(G_episodes, xlabel = "Training round", ylabel = "Return")
